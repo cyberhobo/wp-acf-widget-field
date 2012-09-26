@@ -255,7 +255,12 @@ class acf_Widget extends acf_Field
 
 		if( $field['value'] )
 		{
-			foreach( $field['value'] as $widget )
+			if ( is_array( $field['value'] ) )
+				$widgets = $field['value'];
+			else
+				$widgets = explode( ',', $field['value'] );
+
+			foreach( $widgets as $widget )
 			{
                 $post = array(
                     'ID'    => $widget,
@@ -471,11 +476,11 @@ class acf_Widget extends acf_Field
             if($acf_field):
                 if(get_field($acf_field, $post->ID)):
 
-                    isset($field['inherit_from'])):
+                    if(isset($field['inherit_from'])):
 
                         //menu inheritance
                         if($field['inherit_from'] == 'menu')
-                            $parent = 'menu';
+                           $parent = 'menu';
 
                         //page inheritance
                         elseif($field['inherit_from'] == 'page')
@@ -550,6 +555,8 @@ class acf_Widget extends acf_Field
     static function getWidgetsFromParent($post,$parent,$field,&$include_list)
     {
         $widgets = get_field($field,$post->ID);
+        if ( !is_array( $widgets ) )
+            $widgets = explode( ',', $widgets );
 
         if($widgets):
             $include_list = array_merge($include_list,(array)$widgets);
