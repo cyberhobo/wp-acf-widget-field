@@ -1,300 +1,359 @@
 <?php
 
-/*
- *	Advanced Custom Fields - Widget Relationship Field
- *
- */
- 
- 
-class acf_Widget extends acf_Relationship
+class acf_Widget extends acf_Field
 {
-	//creating a unique string we can use for inheritance
-	const INHERIT_STRING = '--INHERIT--';
 
+    //creating a unique string we can use for inheritance
+    const INHERIT_STRING = '--INHERIT--';
+	
 	/*--------------------------------------------------------------------------------------
 	*
 	*	Constructor
-	*	- This function is called when the field class is initalized on each page.
-	*	- Here you can add filters / actions and setup any other functionality for your field
 	*
-	*	@author Dallas Johnson
+	*	@author Elliot Condon
+	*	@since 1.0.0
+	*	@updated 2.2.0
 	* 
 	*-------------------------------------------------------------------------------------*/
 	
 	function __construct($parent)
 	{
-		// do not delete!
     	parent::__construct($parent);
     	
-    	// set name / title
-    	$this->name = 'widget_field'; // variable name (no spaces / special characters / etc)
-		$this->title = __("Widget Filter",'acf'); // field label (Displayed in edit screens)
-		
+    	$this->name = 'widget_field';
+		$this->title = __("Widget List",'acf');
+
+		add_action('wp_ajax_acf_get_widget_results', array($this, 'acf_get_widget_results'));
    	}
 
-	
-	/*--------------------------------------------------------------------------------------
-	*
-	*	create_options
-	*	- this function is called from core/field_meta_box.php to create extra options
-	*	for your field
-	*
-	*	@params
-	*	- $key (int) - the $_POST object key required to save the options to the field
-	*	- $field (array) - the field object
-	*
-	*	@author Dallas Johnson
-	* 
-	*-------------------------------------------------------------------------------------*/
-	
-	function create_options($key, $field)
-	{
-		global $wp_registered_sidebars;
-		
-		// defaults
-		$field['sidebar'] = isset($field['sidebar']) ? $field['sidebar'] : '';
-		$field['inherit_from'] = isset($field['inherit_from']) ? $field['inherit_from'] : '';
-		?>
-		<tr class="field_option field_option_<?php echo $this->name; ?>">
-			<td class="label">
-				<label for=""><?php _e("Sidebar",'acf'); ?></label>
-			</td>
-			<td>
-				<?php 
-				$sidebars = array();
-				
-				foreach ((array) $wp_registered_sidebars as $sidebar) {
-					if(!is_active_sidebar($sidebar['id']))
-						continue;
-						
-					$sidebars[$sidebar['id']] = $sidebar['name'];
-				}
-				$this->parent->create_field(array(
-					'type'	=>	'select',
-					'name'	=>	'fields['.$key.'][sidebar]',
-					'value'	=>	$field['sidebar'],
-					'choices'	=>	$sidebars,
-					'multiple'	=>	'0',
-				));
-				?>
-			</td>
-		</tr>
-		<tr class="field_option field_option_<?php echo $this->name; ?>">
-			<td class="label">
-				<label for=""><?php _e("Inherit From",'acf'); ?></label>
-			</td>
-			<td>
-				<?php 
-				$options = array();
-                $options[''] = 'None';
-				$options['page'] = 'Page Structure';
-				$options['menu'] = 'Menu Structure';
-				
-				$this->parent->create_field(array(
-					'type' => 'select',
-					'name' => 'fields['.$key.'][inherit_from]',
-					'value'	=> $field['inherit_from'],
-					'choices' => $options
-				));
-				?>
-			</td>
-		</tr>
-		
-		<?php
-		
-		
-	}
 
-		
-	/*--------------------------------------------------------------------------------------
-	*
-	*	get_widgets
-	*	- this function retrieves all widgets for the specified sidebar
-	*
-	*	@author Dallas Johnson
-	* 
-	*-------------------------------------------------------------------------------------*/
-	function get_widgets($field)
-	{
-		global $wp_registered_sidebars, $wp_registered_widgets;
+    /*--------------------------------------------------------------------------------------
+     *
+     *	get_widget_name
+     *	- this function is called by get_widgets and create_field on edit screens to produce the html for this field
+     *
+     *	@author Dallas Johnson
+     *
+     *-------------------------------------------------------------------------------------*/
+    function get_widget_name($id)
+    {
+        if($id == self::INHERIT_STRING)
+            return '-------- Inherit From Parent --------';
 
-        if(is_int($field['sidebar'])):
-			$index = 'sidebar-' . $field['sidebar'];
-		else:
-			$index = sanitize_title($field['sidebar']);
-			foreach ( (array) $wp_registered_sidebars as $key => $value ):
-		        if ( sanitize_title($value['name']) == $index ):
-		                $index = $key;
-		                break;
-		        endif;
-		    endforeach;
-		endif;
+        global $wp_registered_widgets;
 
-		$sidebars_widgets = wp_get_sidebars_widgets();
+        if ( !isset($wp_registered_widgets[$id]) )
+            return false;
 
-		if ( empty($wp_registered_sidebars[$index]) || !array_key_exists($index, $sidebars_widgets) || !is_array($sidebars_widgets[$index]) || empty($sidebars_widgets[$index]) )
-		    return $posts;
+        $classname = $wp_registered_widgets[$id]['callback'][0]->id_base;
+        $instance = $wp_registered_widgets[$id]['params'][0]['number'];
 
-		//set our default
-		$posts = array();
+        if(!$option_list = get_option($classname))
+            $option_list = get_option('widget_'.$classname);
 
-        if(isset($field['inherit_from']) and !($field['inherit_from']==''))
+        return ((strlen($option_list[$instance]['title']) > 0) ? $option_list[$instance]['title'] : 'No Title') . ' (' . $wp_registered_widgets[$id]['name'] . ')';
+    }
+
+
+    /*--------------------------------------------------------------------------------------
+     *
+     *	get_widgets
+     *	- this function is called by create_field on edit screens to produce the html for this field
+     *
+     *	@author Dallas Johnson
+     *
+     *-------------------------------------------------------------------------------------*/
+    function get_widgets($options)
+    {
+        global $wp_registered_sidebars, $wp_registered_widgets;
+
+        if(is_int($options['sidebar'])):
+            $index = 'sidebar-' . $options['sidebar'];
+        else:
+            $index = sanitize_title($options['sidebar']);
+            foreach ( (array) $wp_registered_sidebars as $key => $value ):
+                if ( sanitize_title($value['name']) == $index ):
+                    $index = $key;
+                    break;
+                endif;
+            endforeach;
+        endif;
+
+        $sidebars_widgets = wp_get_sidebars_widgets();
+
+        //set our default
+        $posts = array();
+
+        if ( empty($wp_registered_sidebars[$index]) || !array_key_exists($index, $sidebars_widgets) || !is_array($sidebars_widgets[$index]) || empty($sidebars_widgets[$index]) )
+            return $posts;
+
+        if(isset($options['inherit_from']) and !($options['inherit_from']==''))
             $posts[] = (object)array(
                 'ID' => self::INHERIT_STRING,
-                'title' => '-------- Inherit From Parent --------'
+                'title' => $this->get_widget_name(self::INHERIT_STRING)
             );
 
-
         //loop through widgets in sidebar, add them to posts
-		foreach ( (array) $sidebars_widgets[$index] as $id ) :
+        foreach ( (array) $sidebars_widgets[$index] as $id ) :
 
-		    if ( !isset($wp_registered_widgets[$id]) )
-		        continue;
+            $post = array(
+                'ID' => $id,
+                'title' =>  $this->get_widget_name($id)
+            );
 
-		    $classname = $wp_registered_widgets[$id]['callback'][0]->id_base;
-		    $instance = $wp_registered_widgets[$id]['params'][0]['number'];
+            $posts[] = (object)$post;
 
-		    if(!$option_list = get_option($classname))
-		        $option_list = get_option('widget_'.$classname);
+        endforeach;
 
-		    $post = array(
-			    'ID' => $id,
-			    'title' =>  ((strlen($option_list[$instance]['title']) > 0) ? $option_list[$instance]['title'] : 'No Title') . ' (' . $wp_registered_widgets[$id]['name'] . ')'
-		    );
-
-		    $posts[] = (object)$post;
-
-		endforeach;
-
-		return $posts;
-	}
-	
-	
-	/*--------------------------------------------------------------------------------------
+        return $posts;
+    }
+   	
+   	
+   	/*--------------------------------------------------------------------------------------
 	*
-	*	create_field
-	*	- this function is called on edit screens to produce the html for this field
+	*	acf_get_widget_results
 	*
-	*	@author Dallas Johnson
+	*	@author Elliot Condon
+	*   @description: Generates HTML for Left column relationship results
+	*   @created: 5/07/12
 	* 
 	*-------------------------------------------------------------------------------------*/
 	
-	function create_field($field)
-	{
-		
-		$field['max'] = isset($field['max']) ? $field['max'] : '-1';
-		$field['sidebar'] = isset($field['sidebar']) ? $field['sidebar'] : '';
-		
-		//get widget list
-        $posts = $this->get_widgets($field);
+   	function acf_get_widget_results()
+   	{
+   		// vars
+		$options = array(
+			'sidebar'	    => '',
+            'inherit_from'  => ''
+		);
 
-		$values_array = array();
-		if($field['value'] != ""):
-			//get current values
-			$values_array = explode(',', $field['value']);
-			
-			//get available widgets, we're making sure our set widgets
-			//haven't be deactivated. if they have, we're removing them
-			$all_widgets = wp_get_sidebars_widgets();				
-			$sidebar_widgets = (array)$all_widgets[$field['sidebar']];
-			foreach($values_array as $key => $value):
-				if(!($value == self::INHERIT_STRING) and !in_array($value,$sidebar_widgets))
-					unset($values_array[$key]);
-			endforeach;
-		endif;
-		?>
-		<div class="acf_relationship" data-max="<?php echo $field['max']; ?>">
-			
-			<input type="hidden" name="<?php echo $field['name']; ?>" value="<?php echo implode(',', $values_array); ?>" />
-			
-			<div class="relationship_left">
-				<table class="widefat">
-					<thead>
-						<tr>
-							<th>
-								<label class="relationship_label" for="relationship_<?php echo $field['name']; ?>">Search...</label>
-								<input class="relationship_search" type="text" id="relationship_<?php echo $field['name']; ?>" />
-								<div class="clear_relationship_search"></div>
-							</th>
-						</tr>
-					</thead>
-				</table>
-				<div class="relationship_list">
-				<?php
-				if($posts)
-				{
-					foreach($posts as $post)
-					{
-						if(!$post->title) continue;
-						
-						$class = in_array($post->ID, $values_array) ? 'hide' : '';
-						echo '<a href="javascript:;" class="' . $class . '" data-post_id="' . $post->ID . '">' . $post->title . '<span class="add"></span></a>';
-					}
-				}
-				?>
-				</div>
-			</div>
-			
-			<div class="relationship_right">
-				<div class="relationship_list">
-				<?php
-				$temp_posts = array();
-				
-				if($posts)
-				{
-					foreach($posts as $post)
-					{
-						$temp_posts[$post->ID] = $post;
-					}
-				}
-				
-				if($temp_posts)
-				{
-					foreach($values_array as $value)
-					{
-						echo '<a href="javascript:;" class="" data-post_id="' . $temp_posts[$value]->ID . '">' . $temp_posts[$value]->title . '<span class="remove"></span></a>';
-						unset($temp_posts[$value]);
-					}
-					
-					foreach($temp_posts as $id => $post)
-					{
-						echo '<a href="javascript:;" class="hide" data-post_id="' . $post->ID . '">' . $post->title . '<span class="remove"></span></a>';
-					}
-				}
-					
-				?>
-				</div>
-			</div>
-			
-			
-		</div>
-		<?php
+		$ajax = isset( $_POST['action'] ) ? true : false;
+
+		// override options with posted values
+		if( $ajax )
+		{
+			$options = array_merge($options, $_POST);
+		}
+
+		// load the widget list
+		$posts = $this->get_widgets( $options );
+		
+		if( $posts )
+		{
+			foreach( $posts  as $post )
+			{
+                if(!$post->title) continue;
+
+				// find title. Could use get_the_title, but that uses get_post(), so I think this uses less Memory
+				$title = apply_filters( 'the_title', $post->title, $post->ID );
+
+				echo '<li><a href="javascript:;" data-post_id="' . $post->ID . '">' . $title . '<span class="add"></span></a></li>';
+			}
+		}
+		
+		// die?
+		if( $ajax )
+		{
+			die();
+		}
 	}
 
 
     /*--------------------------------------------------------------------------------------
      *
-     *	update_value
-     *	- this function is called when saving a post object that your field is assigned to.
-     *	the function will pass through the 3 parameters for you to use.
+     *	admin_print_scripts / admin_print_styles
      *
-     *	@params
-     *	- $post_id (int) - useful if you need to save extra data or manipulate the current
-     *	post object
-     *	- $field (array) - useful if you need to manipulate the $value based on a field option
-     *	- $value (mixed) - the new value of your field.
-     *
-     *	@author Dallas Johnson
+     *	@author Elliot Condon
+     *	@since 3.0.0
      *
      *-------------------------------------------------------------------------------------*/
 
-    function update_value($post_id, $field, $value)
+    function admin_print_scripts()
     {
-        // do stuff with value
-
-        // save value
-        parent::update_value($post_id, $field, $value);
+        wp_enqueue_script(array(
+            'jquery-ui-sortable',
+        ));
     }
+
+    function admin_print_styles()
+    {
+
+    }
+
+
+    /*--------------------------------------------------------------------------------------
+     *
+     *	create_field
+     *
+     *	@author Elliot Condon
+     *	@since 2.0.5
+     *	@updated 2.2.0
+     *
+     *-------------------------------------------------------------------------------------*/
+	
+	function create_field($field)
+	{
+		// vars
+		$defaults = array(
+			'sidebar'	    =>	'',
+			'max' 		    =>	-1,
+			'inherit_from' 	=>	'',
+		);
+		
+		$field = array_merge($defaults, $field);
+		
+		// validate types
+		$field['max'] = (int) $field['max'];
+		
+		
+		// row limit <= 0?
+		if( $field['max'] <= 0 )
+		{
+			$field['max'] = 9999;
+		}
+
+		?>
+<div class="acf_relationship" data-max="<?php echo $field['max']; ?>" data-action="acf_get_widget_results" data-s="" data-paged="1" data-sidebar="<?php echo $field['sidebar']; ?>" data-inherit_from="<?php echo $field['inherit_from']; ?>">
+	
+	<!-- Hidden Blank default value -->
+	<input type="hidden" name="<?php echo $field['name']; ?>" value="" />
+	
+	<!-- Template for value -->
+	<script type="text/html" class="tmpl-li">
+	<li>
+		<a href="#" data-post_id="{post_id}">{title}<span class="remove"></span></a>
+		<input type="hidden" name="<?php echo $field['name']; ?>[]" value="{post_id}" />
+	</li>
+	</script>
+	<!-- / Template for value -->
+	
+	<!-- Left List -->
+	<div class="relationship_left">
+		<table class="widefat">
+			<thead>
+				<tr>
+					<th>
+						<label class="relationship_label" for="relationship_<?php echo $field['name']; ?>"><?php _e("Search",'acf'); ?>...</label>
+						<input class="relationship_search" type="text" id="relationship_<?php echo $field['name']; ?>" />
+						<div class="clear_relationship_search"></div>
+					</th>
+				</tr>
+			</thead>
+		</table>
+		<ul class="bl relationship_list">
+			<li class="load-more">
+				<div class="acf-loading"></div>
+			</li>
+		</ul>
+	</div>
+	<!-- /Left List -->
+	
+	<!-- Right List -->
+	<div class="relationship_right">
+		<ul class="bl relationship_list">
+		<?php
+
+		if( $field['value'] )
+		{
+			foreach( $field['value'] as $widget )
+			{
+                $post = array(
+                    'ID'    => $widget,
+                    'title' => $this->get_widget_name($widget)
+                );
+
+				echo '<li>
+					<a href="javascript:;" class="" data-post_id="' . $post['ID'] . '">' . $post['title'] . '<span class="remove"></span></a>
+					<input type="hidden" name="' . $field['name'] . '[]" value="' . $post['ID'] . '" />
+				</li>';
+			}
+		}
+			
+		?>
+		</ul>
+	</div>
+	<!-- / Right List -->
+	
+</div>
+		<?php
+
+	
+	}
+	
+	
+	/*--------------------------------------------------------------------------------------
+	*
+	*	create_options
+	*
+	*	@author Elliot Condon
+	*	@since 2.0.6
+	*	@updated 2.2.0
+	* 
+	*-------------------------------------------------------------------------------------*/
+	
+	function create_options($key, $field)
+	{
+        global $wp_registered_sidebars;
+
+		// vars
+		$defaults = array(
+			'sidebar'	    =>	'',
+			'max' 		    =>	'',
+			'inherit_from' 	=>	''
+		);
+		
+		$field = array_merge($defaults, $field);
+		
+		?>
+        <tr class="field_option field_option_<?php echo $this->name; ?>">
+            <td class="label">
+                <label for=""><?php _e("Sidebar",'acf'); ?></label>
+            </td>
+            <td>
+            <?php
+            $sidebars = array();
+
+            foreach ((array) $wp_registered_sidebars as $sidebar){
+                if(!is_active_sidebar($sidebar['id']))
+                    continue;
+
+                $sidebars[$sidebar['id']] = $sidebar['name'];
+            }
+
+            $this->parent->create_field(array(
+                'type'	    =>	'select',
+                'name'	    =>	'fields['.$key.'][sidebar]',
+                'value'	    =>	$field['sidebar'],
+                'choices'	=>	$sidebars,
+                'multiple'	=>	'0',
+            ));
+
+            ?>
+			</td>
+		</tr>
+        <tr class="field_option field_option_<?php echo $this->name; ?>">
+            <td class="label">
+                <label><?php _e("Inherit From",'acf'); ?></label>
+            </td>
+            <td>
+            <?php
+            $options = array(
+                ''          => 'None',
+                'page'      => 'Page Structure',
+                'menu'      => 'Menu Structure'
+            );
+
+            $this->parent->create_field(array(
+                'type'      => 'select',
+                'name'      => 'fields['.$key.'][inherit_from]',
+                'value'     => $field['inherit_from'],
+                'choices'   => $options
+            ));
+            ?>
+            </td>
+        </tr>
+		<?php
+	}
 
 
     /*--------------------------------------------------------------------------------------
@@ -307,7 +366,8 @@ class acf_Widget extends acf_Relationship
      *	- $post_id (int) - the post ID which your value is attached to
      *	- $field (array) - the field object.
      *
-     *	@author Dallas Johnson
+     *	@author Elliot Condon
+     *	@since 2.2.0
      *
      *-------------------------------------------------------------------------------------*/
 
@@ -323,73 +383,42 @@ class acf_Widget extends acf_Relationship
     }
 
 
+
+    /*--------------------------------------------------------------------------------------
+    *
+    *	STATIC FUNCTIONS
+    *
+    *-------------------------------------------------------------------------------------*/
+
+
     /*--------------------------------------------------------------------------------------
      *
-     *	get_value_for_api
-     *	- called from your template file when using the API functions (get_field, etc).
-     *	This function is useful if your field needs to format the returned value
-     *
-     *	@params
-     *	- $post_id (int) - the post ID which your value is attached to
-     *	- $field (array) - the field object.
+     *	dynamic_widgets
+     *	- this function is called by sidebar.php and retrieves filtered widget list for page
      *
      *	@author Dallas Johnson
      *
      *-------------------------------------------------------------------------------------*/
-
-    function get_value_for_api($post_id, $field)
+    static function dynamic_widgets($index = 1)
     {
-        // vars
-        $value = parent::get_value($post_id, $field);
+        global $wp_registered_sidebars, $wp_registered_widgets;
 
-        if(!$value || $value == "")
-        {
-            return false;
+        if ( is_int($index) ) {
+            $index = "sidebar-$index";
+        } else {
+            $index = sanitize_title($index);
+            foreach ( (array) $wp_registered_sidebars as $key => $value ) {
+                if ( sanitize_title($value['name']) == $index ) {
+                    $index = $key;
+                    break;
+                }
+            }
         }
-
-        $value = explode(',', $value);
-
-        return $value;
-
-    }
-
-
-	/*--------------------------------------------------------------------------------------
-	*
-	*	STATIC FUNCTIONS
-	*
-	*-------------------------------------------------------------------------------------*/
-	
-		
-	/*--------------------------------------------------------------------------------------
-	*
-	*	dynamic_widgets
-	*	- this function is called by sidebar.php and retrieves filtered widget list for page
-	*
-	*	@author Dallas Johnson
-	* 
-	*-------------------------------------------------------------------------------------*/
-
-	static function dynamic_widgets($index = 1) 
-	{
-		global $wp_registered_sidebars, $wp_registered_widgets;
-
-		if ( is_int($index) ) {
-			$index = "sidebar-$index";
-		} else {
-			$index = sanitize_title($index);
-			foreach ( (array) $wp_registered_sidebars as $key => $value ) {
-				if ( sanitize_title($value['name']) == $index ) {
-					$index = $key;
-					break;
-				}
-			}
-		}
 
         $sidebars_widgets = wp_get_sidebars_widgets();
 
         if ( empty($wp_registered_sidebars[$index]) || !array_key_exists($index, $sidebars_widgets) || !is_array($sidebars_widgets[$index]) || empty($sidebars_widgets[$index]) )
-                return false;
+            return false;
 
         $sidebar = $wp_registered_sidebars[$index];
 
@@ -410,6 +439,7 @@ class acf_Widget extends acf_Relationship
         $include_list = array();
 
         //get acf fields for loop
+
         $acf_fields = get_fields($post->ID);
 
         //loop acf fields to get our field key
@@ -441,17 +471,19 @@ class acf_Widget extends acf_Relationship
             if($acf_field):
                 if(get_field($acf_field, $post->ID)):
 
-                    $parent = '';
-
-                    if(isset($field['inherit_from'])):
+                    isset($field['inherit_from'])):
 
                         //menu inheritance
                         if($field['inherit_from'] == 'menu')
                             $parent = 'menu';
 
                         //page inheritance
-                        else
+                        elseif($field['inherit_from'] == 'page')
                             $parent = 'page';
+
+                        //no inheritance
+                        else
+                            $parent = false;
 
                     endif;
 
@@ -470,52 +502,51 @@ class acf_Widget extends acf_Relationship
           * end acf custom
           *---------------------------------------------*/
 
-		$did_one = false;
-		foreach ( (array) $sidebars_widgets[$index] as $id ) {
-		
-			if ( !isset($wp_registered_widgets[$id]) ) continue;
-		
-			$params = array_merge(
-				array( array_merge( $sidebar, array('widget_id' => $id, 'widget_name' => $wp_registered_widgets[$id]['name']) ) ),
-				(array) $wp_registered_widgets[$id]['params']
-			);
-			
-			// Substitute HTML id and class attributes into before_widget
-			$classname_ = '';
-			foreach ( (array) $wp_registered_widgets[$id]['classname'] as $cn ) {
-				if ( is_string($cn) )
-					$classname_ .= '_' . $cn;
-				elseif ( is_object($cn) )
-					$classname_ .= '_' . get_class($cn);
-			}
-			$classname_ = ltrim($classname_, '_');
-			$params[0]['before_widget'] = sprintf($params[0]['before_widget'], $id, $classname_);
-			
-			$params = apply_filters( 'dynamic_sidebar_params', $params );
-			
-			$callback = $wp_registered_widgets[$id]['callback'];
-			
-			do_action( 'dynamic_sidebar', $wp_registered_widgets[$id] );
-			
-			if ( is_callable($callback) ) {
-				call_user_func_array($callback, $params);
-				$did_one = true;
-			}
-		}
-		
-		return $did_one;
-	}
+        $did_one = false;
+        foreach ( (array) $sidebars_widgets[$index] as $id ) {
+
+            if ( !isset($wp_registered_widgets[$id]) ) continue;
+
+            $params = array_merge(
+                array( array_merge( $sidebar, array('widget_id' => $id, 'widget_name' => $wp_registered_widgets[$id]['name']) ) ),
+                (array) $wp_registered_widgets[$id]['params']
+            );
+
+            // Substitute HTML id and class attributes into before_widget
+            $classname_ = '';
+            foreach ( (array) $wp_registered_widgets[$id]['classname'] as $cn ) {
+                if ( is_string($cn) )
+                    $classname_ .= '_' . $cn;
+                elseif ( is_object($cn) )
+                    $classname_ .= '_' . get_class($cn);
+            }
+            $classname_ = ltrim($classname_, '_');
+            $params[0]['before_widget'] = sprintf($params[0]['before_widget'], $id, $classname_);
+
+            $params = apply_filters( 'dynamic_sidebar_params', $params );
+
+            $callback = $wp_registered_widgets[$id]['callback'];
+
+            do_action( 'dynamic_sidebar', $wp_registered_widgets[$id] );
+
+            if ( is_callable($callback) ) {
+                call_user_func_array($callback, $params);
+                $did_one = true;
+            }
+        }
+
+        return $did_one;
+    }
 
 
     /*--------------------------------------------------------------------------------------
      *
-     *	getWidgetsFromParent
+     *	getWidgetsFromCommunity
      *	- this function retrieves all inherited widgets for postID
      *
      *	@author Dallas Johnson
      *
      *-------------------------------------------------------------------------------------*/
-
     static function getWidgetsFromParent($post,$parent,$field,&$include_list)
     {
         $widgets = get_field($field,$post->ID);
@@ -564,23 +595,23 @@ class acf_Widget extends acf_Relationship
         endif;
     }
 
-	
-	/*--------------------------------------------------------------------------------------
-	*
-	*	getMenuIDFromPost
-	*	- this function retrieves menu ID for post
-	*
-	*	@author Dallas Johnson
-	* 
-	*-------------------------------------------------------------------------------------*/
+
+    /*--------------------------------------------------------------------------------------
+     *
+     *	getMenuIDFromPost
+     *	- this function retrieves menu ID for post
+     *
+     *	@author Dallas Johnson
+     *
+     *-------------------------------------------------------------------------------------*/
     static function getMenuIDFromPostID($postID = 0){
         global $wpdb;
         return $wpdb->get_var($wpdb->prepare(
             "SELECT m.post_id FROM $wpdb->postmeta m INNER JOIN $wpdb->posts p ON m.post_id = p.id " .
                 "WHERE m.meta_key = '_menu_item_object_id' AND m.meta_value = %d " .
-                    "AND p.post_status = 'publish' AND p.post_type='nav_menu_item'", $postID));
+                "AND p.post_status = 'publish' AND p.post_type='nav_menu_item'", $postID));
     }
-    
+
 
     /*--------------------------------------------------------------------------------------
     *
@@ -588,15 +619,16 @@ class acf_Widget extends acf_Relationship
     *	- this function retrieves post ID for menu
     *
     *	@author Dallas Johnson
-    * 
+    *
     *-------------------------------------------------------------------------------------*/
     static function getPostIDFromMenuID($menuID = 0){
         global $wpdb;
         return $wpdb->get_var($wpdb->prepare(
             "SELECT m.meta_value FROM $wpdb->postmeta m INNER JOIN $wpdb->posts p ON m.post_id = p.id " .
                 "WHERE m.meta_key = '_menu_item_object_id' AND m.post_id = %d " .
-                    "AND p.post_status = 'publish' AND p.post_type='nav_menu_item'", $menuID));
+                "AND p.post_status = 'publish' AND p.post_type='nav_menu_item'", $menuID));
     }
 
 }
+
 ?>
