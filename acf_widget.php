@@ -24,7 +24,10 @@ class acf_Widget extends acf_Field
 		$this->title = __("Widget List",'acf');
 
 		add_action('wp_ajax_acf_get_widget_results', array($this, 'acf_get_widget_results'));
-   	}
+		add_action('acf_head-input', array($this, 'acf_head_input'));
+	}
+
+	
 
 
     /*--------------------------------------------------------------------------------------
@@ -109,7 +112,7 @@ class acf_Widget extends acf_Field
     }
    	
    	
-   	/*--------------------------------------------------------------------------------------
+	/*--------------------------------------------------------------------------------------
 	*
 	*	acf_get_widget_results
 	*
@@ -156,6 +159,23 @@ class acf_Widget extends acf_Field
 		{
 			die();
 		}
+	}
+
+	/*--------------------------------------------------------------------------------------
+	*
+	*  acf_head_input
+	*
+	*  @author Dylan Kuhn
+	*  @description: Override the relationship_update_results ACF method 
+	*  @created: 2012-12-19
+	* 
+	*-------------------------------------------------------------------------------------*/
+	
+	function acf_head_input()
+	{
+		echo '<script>';
+		include( 'acf_widget.js' );
+		echo '</script>';
 	}
 
 
